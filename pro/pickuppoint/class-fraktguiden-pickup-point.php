@@ -51,8 +51,8 @@ class Fraktguiden_Pickup_Point {
   static function checkout_load_javascript() {
 
     if ( is_checkout() ) {
-      wp_register_script( 'fraktguiden-common', plugins_url( 'assets/js/pickup-point-common.js', dirname( __FILE__ ) ), array( 'jquery' ), '##VERSION##', true );
-      wp_register_script( 'fraktguiden-pickup-point-checkout', plugins_url( 'assets/js/pickup-point-checkout.js', dirname( __FILE__ ) ), array( 'jquery' ), '##VERSION##', true );
+      wp_register_script( 'fraktguiden-common', plugins_url( 'assets/js/pickup-point-common.js', dirname( __FILE__ ) ), array( 'jquery' ), '1.0.0-beta.0', true );
+      wp_register_script( 'fraktguiden-pickup-point-checkout', plugins_url( 'assets/js/pickup-point-checkout.js', dirname( __FILE__ ) ), array( 'jquery' ), '1.0.0-beta.0', true );
       wp_localize_script( 'fraktguiden-pickup-point-checkout', '_fraktguiden_data', [
           'ajaxurl'      => admin_url( 'admin-ajax.php' ),
           'i18n'         => self::get_i18n(),
@@ -83,8 +83,8 @@ class Fraktguiden_Pickup_Point {
         $make_items_editable = false;
       }
 
-      wp_register_script( 'fraktguiden-common', plugins_url( 'assets/js/pickup-point-common.js', dirname( __FILE__ ) ), array( 'jquery' ), '##VERSION##', true );
-      wp_register_script( 'fraktguiden-pickup-point-admin', plugins_url( 'assets/js/pickup-point-admin.js', dirname( __FILE__ ) ), array( 'jquery' ), '##VERSION##', true );
+      wp_register_script( 'fraktguiden-common', plugins_url( 'assets/js/pickup-point-common.js', dirname( __FILE__ ) ), array( 'jquery' ), '1.0.0-beta.0', true );
+      wp_register_script( 'fraktguiden-pickup-point-admin', plugins_url( 'assets/js/pickup-point-admin.js', dirname( __FILE__ ) ), array( 'jquery' ), '1.0.0-beta.0', true );
       wp_localize_script( 'fraktguiden-pickup-point-admin', '_fraktguiden_data', [
           'ajaxurl'             => admin_url( 'admin-ajax.php' ),
           'services'            => Fraktguiden_Helper::get_all_services(),

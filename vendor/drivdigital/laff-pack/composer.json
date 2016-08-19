@@ -1,0 +1,7 @@
+{
+    "name": "drivdigital/laff-pack",
+    "type": "library",
+    "require": {
+        "composer/installers": "*"
+    }
+}
