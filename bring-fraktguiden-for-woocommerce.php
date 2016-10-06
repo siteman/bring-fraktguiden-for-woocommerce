@@ -6,14 +6,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'FRAKTGUIDEN_PLUGIN_PATH', plugin_dir_path( __FILE__ ) );
 
 /**
- * Plugin Name:         Bring Fraktguiden for WooCommerce
+ * Plugin Name:         Bring Fraktguiden for WooCommerce (Siteman fork)
  * Plugin URI:          http://drivdigital.no
  * Description:         N/A
  * Author:              Driv Digital
  * Author URI:          http://drivdigital.no
  * License:             MIT
  *
- * Version:             ##VERSION##
+ * Version:             1.4.0-siteman
  * Requires at least:   3.2.1
  * Tested up to:        4.4.1
  *
