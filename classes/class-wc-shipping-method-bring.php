@@ -593,7 +593,7 @@ class WC_Shipping_Method_Bring extends WC_Shipping_Method {
           'cost'  => (float)$rate + (float)$this->fee,
           'label' => $serviceDetails['GuiInformation'][$this->service_name]
               . ( $this->display_desc == 'no' ?
-                  '' : ': ' . $serviceDetails['GuiInformation']['DescriptionText'] ),
+                  '' : '<span class="bring-shipping-desc">' . $serviceDetails['GuiInformation']['DescriptionText'] . '</span>' ),
       );
 
       array_push( $rates, $rate );
