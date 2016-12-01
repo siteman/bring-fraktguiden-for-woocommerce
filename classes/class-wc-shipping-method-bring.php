@@ -591,9 +591,8 @@ class WC_Shipping_Method_Bring extends WC_Shipping_Method {
       $rate = array(
           'id'    => $this->id . ':' . sanitize_title( $serviceDetails['ProductId'] ),
           'cost'  => (float)$rate + (float)$this->fee,
-          'label' => $serviceDetails['GuiInformation'][$this->service_name]
-              . ( $this->display_desc == 'no' ?
-                  '' : ': ' . $serviceDetails['GuiInformation']['DescriptionText'] ),
+          'label' => $serviceDetails['GuiInformation'][$this->service_name],
+          'meta_data' => array( 'desc' => $this->display_desc == 'no' ? '' : $serviceDetails['GuiInformation']['DescriptionText'] )
       );
 
       array_push( $rates, $rate );

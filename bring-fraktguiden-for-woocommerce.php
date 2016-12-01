@@ -39,6 +39,8 @@ class Bring_Fraktguiden {
 
       add_action( 'woocommerce_shipping_init', 'Bring_Fraktguiden::shipping_init' );
 
+      add_action( 'woocommerce_after_shipping_rate', 'Bring_Fraktguiden::show_shipping_description', 10, 2 );
+
       add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), 'Bring_Fraktguiden::plugin_action_links' );
 
       if ( is_admin() ) {
@@ -86,6 +88,26 @@ class Bring_Fraktguiden {
 
     return array_merge( $action_links, $links );
   }
+
+    /**
+     * Shows description below the name of each shipping rate
+     *
+     * @param WC_Shipping_Rate $method
+     * @param $index
+     */
+    public function show_shipping_description( $method, $index ) {
+        static $is_written = [];
+        // Called twice for each method, make sure we only run once
+        if ( in_array( $method->id , $is_written ) ) {
+            return;
+        }
+        $is_written[] = $method->id;
+        $meta = $method->get_meta_data();
+        if ( empty( $meta[ 'desc' ] ) ) {
+            return;
+        }
+        echo '<br><small class="shipping-rate-description">' . esc_html($meta['desc']) . '</small>';
+    }
 
   /**
    * Called when plugin is deactivated.
