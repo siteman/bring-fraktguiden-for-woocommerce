@@ -7,17 +7,48 @@
     var $ = jQuery;
 
     var lang = _fraktguiden_data.i18n;
+    var checkout_div;
 
     // *************************************************************************
     // Events
 
+    /**
+     * As the checkout is dynamic (ajax) events are delegated to the body element.
+     * in order to not
+     * @returns {jQuery}
+     */
     function events() {
         return $( document.body );
     }
 
+    /**
+     * Event name when the checkout review is updated.
+     * @static
+     * @type {string}
+     */
     events.CHECKOUT_REVIEW_UPDATED = 'updated_checkout';
+
+    /**
+     * Event name when the pickup point post code is updated.
+     * @static
+     * @type {string}
+     */
     events.POST_CODE_UPDATED = 'postcode_updated.bring';
-    events.PICKUP_POINT_CHANGED = 'pickup_point_updated.bring';
+
+
+    /**
+     * Event name when pickup point is updated.
+     * @static
+     * @type {string}
+     */
+    events.PICKUP_POINT_SELECTOR_CHANGED = 'pickup_point_updated.bring';
+
+    /**
+     * Event name when pickup point <select> is updated.
+     * @static
+     * @type {string}
+     */
+    events.PICKUP_POINT_SELECT_UPDATED = 'pickup_point_select_updated.bring';
 
 
     // *************************************************************************
@@ -35,18 +66,52 @@
     add_order_review_event_handlers();
 
     if ( has_klarna_widget() ) {
+        // Get the post code
+        user_selected.postcode = $( '.bring-enter-postcode .input-text' ).val();
+        // Update the cart
         events().trigger( events.CHECKOUT_REVIEW_UPDATED );
-
+        // Determine the checkout div
+        checkout_div = $( '#klarna-checkout-cart' ).parent();
         // Add change event handler for Fraktguiden shipping rates.
         $( 'body' ).on( 'change', 'input[type=radio][value^=bring_fraktguiden].shipping_method', function () {
-            if ( !is_servicepakke_selected() ) {
-                $( '.fraktguiden-pickup-point' ).remove();
+            // Hide the pickup point html if service pakke is not selected
+            if ( ! is_servicepakke_selected() ) {
+                $( '.fraktguiden-pickup-point' ).hide();
                 return;
             }
-            events().trigger( events.CHECKOUT_REVIEW_UPDATED );
         } );
+
+        if ( ! has_bring_shipping_rates() ) {
+            // Hide the checkout itself
+            $( '.klarna_checkout' ).hide();
+        }
     }
 
+    function post_kco_delivery_post_code( post_code ) {
+        if ( !is_servicepakke_selected() ) {
+            $( '.fraktguiden-pickup-point' ).hide();
+        }
+        $.post(
+            kcoAjax.ajaxurl,
+            {
+                action: 'kco_iframe_shipping_address_change_cb',
+                postal_code: post_code,
+                // country: 'NO',
+                nonce: kcoAjax.klarna_checkout_nonce
+            },
+            function( response ) {
+                // Copy paste from klarna code
+                $( '#klarna-checkout-widget' ).html( response.data.widget_html );
+                check_shipping_rate_selection();
+                if ( window._klarnaCheckout ) {
+                    // Reload the klarna payment window
+                    window._klarnaCheckout( function ( api ) {
+                        api.resume();
+                    } );
+                }
+            }
+        );
+    }
 
     // *************************************************************************
     // Functions
@@ -56,6 +121,10 @@
      */
     function add_pickup_point_html() {
         if ( $( '.fraktguiden-pickup-point' ).length > 0 ) {
+            // Select shipping method must either not exist or not be disabled
+            if ( ! $( '.select-shipping-method' ).length || ! $( '.select-shipping-method.disabled' ).length  ) {
+                $( '.fraktguiden-pickup-point' ).show();
+            }
             return;
         }
         var html = [];
@@ -140,17 +209,39 @@
                 // Set value in the selector.
                 if ( user_selected.pickup_point_id ) {
                     pickup_point_selector.val( user_selected.pickup_point_id );
-                    events().trigger( events.PICKUP_POINT_CHANGED, [pickup_point_selector.get( 0 )] );
+                    events().trigger( events.PICKUP_POINT_SELECTOR_CHANGED, [pickup_point_selector.get( 0 )] );
                 }
                 else {
 
                     pickup_point_select_elem().prop( 'selectedIndex', 0 );
                 }
                 pickup_point_select_elem().show();
+                events().trigger( events.PICKUP_POINT_SELECT_UPDATED );
             }
         };
 
         Bring_Common.load_pickup_points( country, postcode, ajax_options );
+    }
+
+    function check_shipping_rate_selection() {
+        if ( has_bring_shipping_rates() ) {
+            if ( is_servicepakke_selected() ) {
+                // Create pickup point html.
+                add_pickup_point_html();
+
+                user_selected.postcode = user_selected.postcode ? user_selected.postcode : get_shipping_postcode();
+                user_selected.country = user_selected.country ? user_selected.country : get_shipping_country();
+                events().trigger( events.POST_CODE_UPDATED, [user_selected.postcode, user_selected.country] );
+            }
+            if ( has_klarna_widget() ) {
+                if ( is_servicepakke_selected() && !pickup_point_select_elem().val() ) {
+                    $( '.klarna_checkout' ).hide();
+                }
+                else{
+                    $( '.klarna_checkout' ).show();
+                }
+            }
+        }
     }
 
     /**
@@ -171,21 +262,21 @@
 
         // Each time the order review box is updated.
         events().on( events.CHECKOUT_REVIEW_UPDATED, function () {
-            if ( has_bring_shipping_rates() ) {
-                if ( is_servicepakke_selected() ) {
-                    // Create pickup point html.
-                    add_pickup_point_html();
-
-                    user_selected.postcode = user_selected.postcode ? user_selected.postcode : get_shipping_postcode();
-                    user_selected.country = user_selected.country ? user_selected.country : get_shipping_country();
-                    events().trigger( events.POST_CODE_UPDATED, [user_selected.postcode, user_selected.country] );
-                }
+            if ( has_klarna_widget() ) {
+                $( '.bring-enter-postcode form' ).submit( function( e ) {
+                    e.preventDefault();
+                    $( this ).addClass( 'loading' );
+                    $( this ).find( 'input' ).prop( 'disabled', true );
+                    post_kco_delivery_post_code( $( this ). find( '.input-text' ).val() );
+                } );
             }
+            check_shipping_rate_selection();
         } );
 
         // Each time Pickup point postcode is updated.
         events().on( events.POST_CODE_UPDATED, function ( evt, postcode, country ) {
-            pickup_point_select_elem().val( '' );
+
+            var id = Bring_Common.read_cookie( '_fraktguiden_pickup_point_id' );
 
             update_cookies();
 
@@ -195,16 +286,33 @@
             // Return if post code char length is lesser than 3 chars.
             if ( code.length < 3 ) return;
 
-            update_pickup_point_selector( code, country );
+            if ( ! has_klarna_widget() ) {
+                // When klarna is used then the pickup points are provided with the ajax for the widget html
+                pickup_point_select_elem().val( id );
+                update_pickup_point_selector( code, country );
+            }
+            else {
+                $( '#'+ id ).prop( 'checked', true );
+                setTimeout( function() {
+                    $( '#'+ id ).prop( 'checked', true );
+                }, 500 );
+            }
 
             // delay( function () {
             //     update_pickup_points( code, country );
             // }, 700 );
         } );
 
-        events().on( events.PICKUP_POINT_CHANGED, function ( evt, pickup_point_selector ) {
-            var selected_option = $( pickup_point_selector.options[pickup_point_selector.selectedIndex] );
-            update_display_info(selected_option.data( 'pickup_point' ));
+        events().on( events.PICKUP_POINT_SELECTOR_CHANGED, function ( evt, pickup_point_selector ) {
+            if ( has_klarna_widget ) {
+                // Klarna uses radio buttons. Meaning the input is the data source
+                update_display_info( $( pickup_point_selector ).data( 'pickup_point' ) );
+            }
+            else {
+                // Normal wo Klarna uses a select dropdown which means an <option> of the select is the data source
+                var selected_option = $( pickup_point_selector.options[pickup_point_selector.selectedIndex] );
+                update_display_info(selected_option.data( 'pickup_point' ));
+            }
             update_cookies();
         } );
 
@@ -213,9 +321,9 @@
             events().trigger( events.POST_CODE_UPDATED, [this.value, get_shipping_country()] );
         } );
 
-        get_order_review_wrapper_elem().on( 'change', '.fraktguiden-pickup-point-select', function () {
+        get_order_review_wrapper_elem().on( 'change', '.fraktguiden-pickup-point-select, .fraktguiden-pickup-point-list input', function () {
             user_selected.pickup_point_id = this.value;
-            events().trigger( events.PICKUP_POINT_CHANGED, [this] );
+            events().trigger( events.PICKUP_POINT_SELECTOR_CHANGED, [this] );
         } );
     }
 
@@ -230,6 +338,9 @@
             $( '.fraktguiden-selected-text' ).text( '' );
             $( '.fraktguiden-pickup-point-display' ).html( '' );
             $( '[name=_fraktguiden_pickup_point_info_cached]' ).val( '' );
+            if ( has_klarna_widget ) {
+                $( '.klarna_checkout' ).hide();
+            }
         }
         else {
             var html = Bring_Common.create_pickup_point_display_html( pickup_point, get_shipping_country() );
@@ -237,6 +348,9 @@
             $( '.fraktguiden-selected-text' ).text( lang.SELECTED_TEXT + ':' );
             $( '.fraktguiden-pickup-point-display' ).html( html );
             $( '[name=_fraktguiden_pickup_point_info_cached]' ).val( Bring_Common.br2pipe( html ) );
+            if ( has_klarna_widget ) {
+                $( '.klarna_checkout' ).show();
+            }
         }
     }
 
@@ -390,7 +504,7 @@
      * @returns {jQuery}
      */
     function pickup_point_select_elem() {
-        return $( '.fraktguiden-pickup-point-select' );
+        return $( '.fraktguiden-pickup-point-select, .fraktguiden-pickup-point-list input' );
     }
 
     /**
@@ -414,7 +528,16 @@
      * Updates cookies with the user's data.
      */
     function update_cookies() {
-        Bring_Common.create_cookie( '_fraktguiden_pickup_point_id', pickup_point_select_elem().val() );
+        var pickup_id;
+        if ( has_klarna_widget() ) {
+            pickup_id = pickup_point_select_elem().filter( ':checked' ).val();
+        }
+        else {
+            pickup_id = pickup_point_select_elem().val();
+        }
+        if ( pickup_id ) {
+            Bring_Common.create_cookie( '_fraktguiden_pickup_point_id', pickup_id );
+        }
         Bring_Common.create_cookie( '_fraktguiden_pickup_point_postcode', user_selected.postcode );
         Bring_Common.create_cookie( '_fraktguiden_pickup_point_info_cached', $( '[name=_fraktguiden_pickup_point_info_cached]' ).val() );
         // console.log( 'read cookie', Bring_Common.read_cookie( '_fraktguiden_pickup_point_id' ) );

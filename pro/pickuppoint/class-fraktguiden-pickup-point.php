@@ -13,7 +13,6 @@ add_action( 'woocommerce_thankyou', array( 'Fraktguiden_Pickup_Point', 'checkout
 class Fraktguiden_Pickup_Point {
 
   const ID = Fraktguiden_Helper::ID;
-  const TEXT_DOMAIN = Fraktguiden_Helper::TEXT_DOMAIN;
   const BASE_URL = 'https://api.bring.com/pickuppoint/api/pickuppoint';
 
   static function init() {
@@ -43,6 +42,95 @@ class Fraktguiden_Pickup_Point {
     // Hide shipping meta data from order items (WooCommerce 2.6)
     // https://github.com/woothemes/woocommerce/issues/9094
     add_filter( 'woocommerce_hidden_order_itemmeta', array( __CLASS__, 'woocommerce_hidden_order_itemmeta' ), 1, 1 );
+
+    // Klarna checkout specific html
+    add_action( 'kco_after_cart', array( __CLASS__, 'kco_post_code_html' ) );
+    add_action( 'kco_after_cart', array( __CLASS__, 'kco_pickuppoint_html' ), 11 );
+    add_filter( 'kco_create_order', array( __CLASS__, 'set_kco_postal_code' ) );
+    add_filter( 'kco_update_order', array( __CLASS__, 'set_kco_postal_code' ) );
+  }
+
+  /**
+   * Set Klarna Checkout postal code
+   * @param array Klarna order data
+   */
+  static function set_kco_postal_code( $order ) {
+    $postcode = esc_html( WC()->customer->get_shipping_postcode() );
+    $order['shipping_address']['postal_code'] = $postcode;
+    return $order;
+  }
+
+  /**
+   * Klarna Checkout post code selector HTML
+   */
+  static function kco_post_code_html() {
+    $i18n = self::get_i18n();
+    $postcode = esc_html( WC()->customer->get_shipping_postcode() );
+    ?>
+    <div class="bring-enter-postcode">
+      <form>
+        <label><?php echo $i18n['POSTCODE']; ?>
+          <input class="input-text" type="text" value="<?php echo $postcode; ?>">
+        </label>
+        <input class="button" type="submit" value="Hent Leveringsmetoder">
+      </form>
+    </div>
+    <?php
+  }
+
+  /**
+   * Klarna Checkout pickup point HTML
+   */
+  static function kco_pickuppoint_html() {
+    $i18n               = self::get_i18n();
+    $postcode           = esc_html( WC()->customer->get_shipping_postcode() );
+    $selected_id        = trim( @$_COOKIE['_fraktguiden_pickup_point_id'] );
+    $options            = '';
+    $postcodes          = array();
+    $pickup_point_limit = apply_filters( 'bring_pickup_point_limit', 999 );
+    $pickup_point_count = 0;
+    if ( $postcode ) {
+      $response = self::get_pickup_points( 'NO', $postcode );
+      if ( 200 == $response->status_code ) {
+        $pickup_points = json_decode( $response->get_body() );
+        foreach ( $pickup_points->pickupPoint as $pickup_point ) {
+          if ( ! $selected_id || 'undefined' == $selected_id ) {
+            $selected_id = $pickup_point->id;
+          }
+          $postcodes[ $pickup_point->id ] = [
+            'name' => esc_html( $pickup_point->name ),
+            'data' => esc_html( json_encode( $pickup_point ) ),
+          ];
+          if ( ++$pickup_point_count >= $pickup_point_limit ) {
+            break;
+          }
+        }
+      }
+    }
+
+    foreach ( $postcodes as $key => $value ) {
+      $selected = '';
+      if ( $selected_id == $key ) {
+        $selected = 'checked="checked"';
+      }
+      $options .= sprintf(
+        '<li><input name="bring_method" type="radio" value="%s" %s data-pickup_point="%s" id="%1$s"> <label for="%1$s">%s</label></li>',
+        $key,
+        $selected,
+        $value['data'],
+        $value['name']
+      );
+    }
+    ?>
+    <div class="fraktguiden-pickup-point" style="display: none">
+      <ul class="fraktguiden-pickup-point-list">
+        <?php echo $options; ?>
+      </ul>
+      <div class="fraktguiden-selected-text"></div>
+      <div class="fraktguiden-pickup-point-display"></div>
+      <input type="hidden" name="_fraktguiden_pickup_point_info_cached"/>
+    </div>
+    <?php
   }
 
   /**
@@ -115,7 +203,7 @@ class Fraktguiden_Pickup_Point {
   static function checkout_validate_pickup_point() {
     // Check if set, if its not set add an error.
     if ( ! $_COOKIE['_fraktguiden_pickup_point_id'] ) {
-      wc_add_notice( __( '<strong>Pickup point</strong> is a required field.', self::TEXT_DOMAIN ), 'error' );
+      wc_add_notice( __( '<strong>Pickup point</strong> is a required field.', 'bring-fraktguiden' ), 'error' );
     }
   }
 
@@ -132,8 +220,11 @@ class Fraktguiden_Pickup_Point {
 
       $order = new Bring_WC_Order_Adapter( new WC_Order( $order_id ) );
 
-      if ( session_status() == PHP_SESSION_NONE ) {
-        session_start();
+      $expire = time() - 300;
+
+      if ( isset( $_COOKIE['_fraktguiden_packages'] ) ) {
+        $order->checkout_update_packages( $_COOKIE['_fraktguiden_packages'] );
+        setcookie( '_fraktguiden_packages', '', $expire );
       }
 
       if ( isset( $_COOKIE['_fraktguiden_pickup_point_id'] ) && isset( $_COOKIE['_fraktguiden_pickup_point_postcode'] ) && isset( $_COOKIE['_fraktguiden_pickup_point_info_cached'] ) ) {
@@ -146,17 +237,10 @@ class Fraktguiden_Pickup_Point {
         // Unset cookies.
         // This does not work at the moment as headers has already been sent.
         // @todo: Find an earlier hook
-        $expire = time() - 300;
         setcookie( '_fraktguiden_pickup_point_id', '', $expire );
         setcookie( '_fraktguiden_pickup_point_postcode', '', $expire );
         setcookie( '_fraktguiden_pickup_point_info_cached', '', $expire );
       }
-
-      if ( isset( $_SESSION['_fraktguiden_packages'] ) ) {
-        $order->checkout_update_packages( $_SESSION['_fraktguiden_packages'] );
-        unset( $_SESSION['_fraktguiden_packages'] );
-      }
-
     }
   }
 
@@ -181,11 +265,13 @@ class Fraktguiden_Pickup_Point {
   static function checkout_order_shipping_to_display_shipped_via( $content, $wc_order ) {
     $shipping_methods = $wc_order->get_shipping_methods();
     foreach ( $shipping_methods as $id => $shipping_method ) {
-      if ( $shipping_method['method_id'] == self::ID . ':servicepakke' ) {
-        if ( key_exists( 'fraktguiden_pickup_point_info_cached', $shipping_method ) ) {
-          $info    = $shipping_method['fraktguiden_pickup_point_info_cached'];
-          $content = $content . '<div class="bring-order-details-pickup-point"><div class="bring-order-details-selected-text">' . self::get_i18n()['PICKUP_POINT'] . ':</div><div class="bring-order-details-info-text">' . str_replace( "|", '<br>', $info ) . '</div></div>';
-        }
+      if (
+        $shipping_method['method_id'] == self::ID . ':servicepakke' &&
+        key_exists( 'fraktguiden_pickup_point_info_cached', $shipping_method ) &&
+        $shipping_method['fraktguiden_pickup_point_info_cached']
+      ) {
+        $info    = $shipping_method['fraktguiden_pickup_point_info_cached'];
+        $content = $content . '<div class="bring-order-details-pickup-point"><div class="bring-order-details-selected-text">' . self::get_i18n()['PICKUP_POINT'] . ':</div><div class="bring-order-details-info-text">' . str_replace( "|", '<br>', $info ) . '</div></div>';
       }
     }
     return $content;
@@ -197,25 +283,24 @@ class Fraktguiden_Pickup_Point {
    * @return array
    */
   static function get_i18n() {
-    $text_domain = self::TEXT_DOMAIN;
     return [
-        'PICKUP_POINT'               => __( 'Pickup point', $text_domain ),
-        'LOADING_TEXT'               => __( 'Please wait...', $text_domain ),
-        'VALIDATE_SHIPPING1'         => __( 'Fraktguiden requires the following fields', $text_domain ),
-        'VALIDATE_SHIPPING_POSTCODE' => __( 'Valid shipping postcode', $text_domain ),
-        'VALIDATE_SHIPPING_COUNTRY'  => __( 'Valid shipping postcode', $text_domain ),
-        'VALIDATE_SHIPPING2'         => __( 'Please update the fields and save the order first', $text_domain ),
-        'SERVICE_PLACEHOLDER'        => __( 'Please select service', $text_domain ),
-        'POSTCODE'                   => __( 'Postcode', $text_domain ),
-        'PICKUP_POINT_PLACEHOLDER'   => __( 'Please select pickup point', $text_domain ),
-        'SELECTED_TEXT'              => __( 'Selected pickup point', $text_domain ),
-        'PICKUP_POINT_NOT_FOUND'     => __( 'No pickup points found for postcode', $text_domain ),
-        'GET_RATE'                   => __( 'Get Rate', $text_domain ),
-        'PLEASE_WAIT'                => __( 'Please wait', $text_domain ),
-        'SERVICE'                    => __( 'Service', $text_domain ),
-        'RATE_NOT_AVAILABLE'         => __( 'Rate is not available for this order. Please try another service', $text_domain ),
-        'REQUEST_FAILED'             => __( 'Request was not successful', $text_domain ),
-        'ADD_POSTCODE'               => __( 'Please add postal code', $text_domain ),
+        'PICKUP_POINT'               => __( 'Pickup point', 'bring-fraktguiden' ),
+        'LOADING_TEXT'               => __( 'Please wait...', 'bring-fraktguiden' ),
+        'VALIDATE_SHIPPING1'         => __( 'Fraktguiden requires the following fields', 'bring-fraktguiden' ),
+        'VALIDATE_SHIPPING_POSTCODE' => __( 'Valid shipping postcode', 'bring-fraktguiden' ),
+        'VALIDATE_SHIPPING_COUNTRY'  => __( 'Valid shipping postcode', 'bring-fraktguiden' ),
+        'VALIDATE_SHIPPING2'         => __( 'Please update the fields and save the order first', 'bring-fraktguiden' ),
+        'SERVICE_PLACEHOLDER'        => __( 'Please select service', 'bring-fraktguiden' ),
+        'POSTCODE'                   => __( 'Postcode', 'bring-fraktguiden' ),
+        'PICKUP_POINT_PLACEHOLDER'   => __( 'Please select pickup point', 'bring-fraktguiden' ),
+        'SELECTED_TEXT'              => __( 'Selected pickup point', 'bring-fraktguiden' ),
+        'PICKUP_POINT_NOT_FOUND'     => __( 'No pickup points found for postcode', 'bring-fraktguiden' ),
+        'GET_RATE'                   => __( 'Get Rate', 'bring-fraktguiden' ),
+        'PLEASE_WAIT'                => __( 'Please wait', 'bring-fraktguiden' ),
+        'SERVICE'                    => __( 'Service', 'bring-fraktguiden' ),
+        'RATE_NOT_AVAILABLE'         => __( 'Rate is not available for this order. Please try another service', 'bring-fraktguiden' ),
+        'REQUEST_FAILED'             => __( 'Request was not successful', 'bring-fraktguiden' ),
+        'ADD_POSTCODE'               => __( 'Please add postal code', 'bring-fraktguiden' ),
     ];
   }
 
@@ -307,13 +392,16 @@ class Fraktguiden_Pickup_Point {
     die();
   }
 
+  static function get_pickup_points( $country, $postcode ) {
+    $request = new WP_Bring_Request();
+    return $request->get( self::BASE_URL . '/' . $country . '/postalCode/' . $postcode . '.json' );
+  }
   /**
    * Prints pickup points json
    */
   static function wp_ajax_get_pickup_points() {
     if ( isset( $_GET['country'] ) && $_GET['postcode'] ) {
-      $request  = new WP_Bring_Request();
-      $response = $request->get( self::BASE_URL . '/' . $_GET['country'] . '/postalCode/' . $_GET['postcode'] . '.json' );
+      $response = self::get_pickup_points( $_GET['country'], $_GET['postcode'] );
 
       header( "Content-type: application/json" );
       status_header( $response->status_code );
@@ -324,7 +412,6 @@ class Fraktguiden_Pickup_Point {
       else {
         echo $response->get_body();
       }
-
     }
     die();
   }
